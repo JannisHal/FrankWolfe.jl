@@ -216,3 +216,20 @@ function compute_extreme_point(
     v[idx] = ifelse(lower, lmo.lower_bounds[idx], lmo.upper_bounds[idx])
     return v
 end
+
+"""
+    ConvHull(vertices)
+Polytope is convex hull of a given list of vertices
+"""
+struct ConvHull{T} <: LinearMinimizationOracle
+       vertices::AbstractVector{T}
+end
+
+function compute_extreme_point(
+    lmo::ConvHull,
+    direction;
+    kwargs...,
+)
+    idx = argmin([dot(v,direction) for v in lmo.vertices])
+    return lmo.vertices[idx]
+end
