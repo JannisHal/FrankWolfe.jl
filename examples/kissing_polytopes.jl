@@ -104,14 +104,56 @@ println(length(p_lattices))
 @time q_lattices = compute_lattices_reduced(1.0)
 println(length(q_lattices))
 
-lmo_p = FrankWolfe.ConvHull(p_lattices)
-lmo_q = FrankWolfe.ConvHull(q_lattices)
-
 f(x) = 0
 
 function grad!(storage, x)
     @. storage = zero(x)
 end
+
+xp = p_lattices[1]
+xq = q_lattices[1]
+
+diff = (xq - xp)/norm(xq - xp)
+
+p_max = -Inf
+@time for v in p_lattices
+    score = FrankWolfe.fast_dot(diff, v - xp)/norm(v - xp)
+    if score > p_max
+        global p_max = score
+    end
+end
+println("pmax: ", p_max)
+
+q_min = Inf
+@time for v in q_lattices
+    score = FrankWolfe.fast_dot(diff, v - xq)/norm(v - xq)
+    if score < q_min
+        global q_min = score
+    end
+end
+println("qmin: ", q_min)
+
+@time filter!(v -> FrankWolfe.fast_dot(diff, v - xq)/norm(v - xq) < p_max, q_lattices)
+println(length(q_lattices))
+@time filter!(v -> FrankWolfe.fast_dot(diff, v - xp)/norm(v - xp) > q_min, p_lattices)
+println(length(p_lattices))
+
+
+#=
+@time p_scores = [FrankWolfe.fast_dot(diff, v) for v in p_lattices]
+@time q_scores = [FrankWolfe.fast_dot(diff, v) for v in q_lattices]
+
+p_max = maximum(p_scores)
+q_min = minimum(q_scores)
+
+q_lattices_new = q_lattices[q_scores .> p_max]
+p_lattices_new = p_lattices[p_scores .< q_min]
+println(length(p_lattices_new))
+println(length(q_lattices_new))
+=#
+lmo_p = FrankWolfe.ConvHull(p_lattices)
+lmo_q = FrankWolfe.ConvHull(q_lattices)
+
 
 x, _, _, _, infeas, traj_data = FrankWolfe.alternating_linear_minimization(
     FrankWolfe.away_frank_wolfe,
@@ -119,11 +161,8 @@ x, _, _, _, infeas, traj_data = FrankWolfe.alternating_linear_minimization(
     grad!,
     (lmo_p, lmo_q),
     zeros(d);
-    lambda=1.0,
     verbose=true,
     trajectory=true,
-    #max_iteration=1e6,
-    print_iter=1e1,
 )
 
 println(1/sqrt(d*(d-1)), " ", sqrt(infeas), " ", sqrt(δ*σ)/((k*(δ-1))^σ))
