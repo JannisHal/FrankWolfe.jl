@@ -37,6 +37,34 @@ struct ActiveSetQuadraticLinearSolve{
     wolfe_step::Bool
     scheduler::SF
     counter::Base.RefValue{Int}
+    success::Base.RefValue{Int}
+end
+
+function ActiveSetQuadraticLinearSolve(
+    weights::Vector{R},
+    atoms::Vector{AT},
+    x::IT,
+    A::H,
+    b::BT,
+    active_set::AS,
+    lp_optimizer::OT,
+    wolfe_step::Bool,
+    scheduler::SF,
+    counter::Base.RefValue{Int},
+) where {AT,R,IT,H,BT,OT,AS,SF}
+    return ActiveSetQuadraticLinearSolve(
+        weights,
+        atoms,
+        x,
+        A,
+        b,
+        active_set,
+        lp_optimizer,
+        wolfe_step,
+        scheduler,
+        counter,
+        Ref(0),
+    )
 end
 
 """
@@ -358,7 +386,7 @@ function solve_quadratic_activeset_lp!(
     end
     MOI.set(o, MOI.ObjectiveFunction{typeof(sum_of_variables)}(), sum_of_variables)
     MOI.set(o, MOI.ObjectiveSense(), MOI.MIN_SENSE)
-    MOI.optimize!(o)
+    #=@time=# MOI.optimize!(o)
     if MOI.get(o, MOI.TerminationStatus()) ∉ (MOI.OPTIMAL, MOI.FEASIBLE_POINT, MOI.ALMOST_OPTIMAL)
         return as
     end
@@ -366,6 +394,9 @@ function solve_quadratic_activeset_lp!(
         _compute_new_weights_wolfe_step(λ, R, as.weights, o)
     else
         _compute_new_weights_direct_solve(λ, R, o)
+    end
+    if isempty(indices_to_remove)
+        as.success[] += 1
     end
     deleteat!(as.active_set, indices_to_remove)
     @assert length(as) == length(new_weights)
