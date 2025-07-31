@@ -288,9 +288,9 @@ function active_set_update!(
     # new atom introduced, we can solve the auxiliary LP
     if idx < 0
         as.counter[] += 1
-        if should_solve_lp(as, as.scheduler)
-            solve_quadratic_activeset_lp!(as)
-        end
+    end
+    if should_solve_lp(as, as.scheduler, idx)
+        solve_quadratic_activeset_lp!(as)
     end
     return as
 end
@@ -493,14 +493,16 @@ end
 LogScheduler(; start_time=20, scaling_factor=1.5, max_interval=1000) =
     LogScheduler(start_time, scaling_factor, max_interval, Ref(start_time), Ref(0))
 
-function should_solve_lp(as::ActiveSetQuadraticLinearSolve, scheduler::LogScheduler)
-    if as.counter[] - scheduler.last_solve_counter[] >= scheduler.current_interval[]
-        scheduler.last_solve_counter[] = as.counter[]
-        scheduler.current_interval[] = min(
-            round(Int, scheduler.scaling_factor * scheduler.current_interval[]),
-            scheduler.max_interval,
-        )
-        return true
+function should_solve_lp(as::ActiveSetQuadraticLinearSolve, scheduler::LogScheduler, idx)
+    if idx < 0
+        if as.counter[] - scheduler.last_solve_counter[] >= scheduler.current_interval[]
+            scheduler.last_solve_counter[] = as.counter[]
+            scheduler.current_interval[] = min(
+                round(Int, scheduler.scaling_factor * scheduler.current_interval[]),
+                scheduler.max_interval,
+            )
+            return true
+        end
     end
     return false
 end
