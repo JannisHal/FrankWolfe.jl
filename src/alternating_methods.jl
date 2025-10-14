@@ -276,6 +276,7 @@ function alternating_projections(
     timeout=Inf,
     proj_method=frank_wolfe,
     inner_epsilon::Function=t -> 1 / (t^2 + 1),
+    max_inner_iteration=10000,
     reuse_active_set=false,
     kwargs...,
 ) where {N}
@@ -333,7 +334,7 @@ function alternating_projections(
                 lmo.lmos[i],
                 active_sets[i];
                 epsilon=inner_epsilon(t),
-                max_iteration=10000,
+                max_iteration=max_inner_iteration,
                 line_search=Adaptive(),
                 kwargs...,
             )
@@ -345,10 +346,12 @@ function alternating_projections(
                 lmo.lmos[i],
                 x.blocks[i];
                 epsilon=inner_epsilon(t),
-                max_iteration=10000,
-                line_search=Adaptive(),
+                max_iteration=max_inner_iteration,
+                line_search=Shortstep(2.0),
+                trajectory=true,
                 kwargs...,
             )
+            #@info "$(typeof(lmo.lmos[i])): $(length(results[:traj_data]))"
         end
         return results[:x], results[:dual_gap]
     end
@@ -377,17 +380,33 @@ function alternating_projections(
         end
     end
 
-    first_iter = true
-
     while t <= max_iteration && dual_gap >= max(epsilon, eps(float(typeof(dual_gap))))
+
+        # Projection step:
+        for i in 1:N
+            # project the previous iterate on the i-th feasible region
+            x.blocks[i], dual_gaps[i] = projection_step(i, t)
+        end
+
+        dual_gap = sum(dual_gaps)
+        println(dual_gaps)
+
+        # Update gradients
+        grad!(gradient, x)
+        v = compute_extreme_point(lmo, gradient)
+        dual_gap = dot(gradient, x) - dot(gradient, v)
+        println(dual_gap)
+
+
+        # go easy on the memory - only compute if really needed
+        if ((mod(t, print_iter) == 0 && verbose) || callback !== nothing)
+            primal = dist2(x)
+        end
 
         #####################
         # managing time and Ctrl-C
         #####################
         time_at_loop = time_ns()
-        if t == 0
-            time_start = time_at_loop
-        end
         # time is measured at beginning of loop for consistency throughout all algorithms
         tot_time = (time_at_loop - time_start) / 1e9
 
@@ -399,25 +418,6 @@ function alternating_projections(
                 break
             end
         end
-
-        # Projection step:
-        for i in 1:N
-            # project the previous iterate on the i-th feasible region
-            x.blocks[i], dual_gaps[i] = projection_step(i, t)
-        end
-
-        dual_gap = sum(dual_gaps)
-
-        # Update gradients
-        grad!(gradient, x)
-
-
-        # go easy on the memory - only compute if really needed
-        if ((mod(t, print_iter) == 0 && verbose) || callback !== nothing)
-            primal = dist2(x)
-        end
-
-        first_iter = false
 
         t = t + 1
         if callback !== nothing
