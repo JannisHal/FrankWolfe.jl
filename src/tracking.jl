@@ -55,7 +55,7 @@ end
 
 function compute_extreme_point(lmo::TrackingLMO, x; kwargs...)
     lmo.counter += 1
-    return compute_extreme_point(lmo.lmo, x)
+    return compute_extreme_point(lmo.lmo, x; kwargs...)
 end
 
 is_tracking_lmo(lmo) = false
