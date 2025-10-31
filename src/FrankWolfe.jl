@@ -49,19 +49,20 @@ include("block_coordinate_algorithms.jl")
 include("alternating_methods.jl")
 include("blended_pairwise.jl")
 include("pairwise.jl")
+include("dca.jl")
 include("dicg.jl")
 include("tracking.jl")
 include("callback.jl")
 
+module Experimental
 include("gradient_descent.jl")
+end
 
 include("corrective_step_interface.jl")
 include("corrective_frankwolfe.jl")
 
 # collecting most common data types etc and precompile
 # min version req set to 1.5 to prevent stalling of julia 1
-@static if VERSION >= v"1.5"
-    include("precompile.jl")
-end
+include("precompile.jl")
 
 end

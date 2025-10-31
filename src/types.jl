@@ -374,8 +374,6 @@ LinearAlgebra.dot(v1::ScaledHotVector{<:Number}, v2::NegatingArray{<:Number,1}) 
 LinearAlgebra.dot(a::NegatingArray{<:Number,2}, d::LinearAlgebra.Diagonal) = -dot(a.array, d)
 LinearAlgebra.dot(d::LinearAlgebra.Diagonal, a::NegatingArray{<:Number,2}) = -dot(d, a.array)
 
-@deprecate fast_dot(A, B) dot(A, B) false
-
 fast_dot(a, Q, b) = dot(a, Q, b)
 
 function fast_dot(
@@ -448,6 +446,34 @@ function _fast_quadratic_form_symmetric(a, Q)
     s = zero(Base.promote_eltype(a, Q))
     @inbounds for nzidx in eachindex(nzvals)
         s += nzvals[nzidx]^2 * d[nzinds[nzidx]]
+    end
+    return s
+end
+
+function fast_dot(
+    a::SparseArrays.AbstractSparseVector{<:Real},
+    Q::AbstractMatrix{<:Real},
+    b::SparseArrays.AbstractSparseVector{<:Real},
+)
+    n = length(a)
+    m = length(b)
+    if size(Q) != (n, m)
+        throw(DimensionMismatch("Matrix has a size $(size(Q)) but vectors have length $n, $m"))
+    end
+    anzind = SparseArrays.nonzeroinds(a)
+    bnzind = SparseArrays.nonzeroinds(b)
+    anzval = SparseArrays.nonzeros(a)
+    bnzval = SparseArrays.nonzeros(b)
+    s = zero(Base.promote_eltype(a, Q, b))
+    if isempty(anzind) || isempty(bnzind)
+        return s
+    end
+    for a_idx in eachindex(anzind)
+        for b_idx in eachindex(bnzind)
+            ia = anzind[a_idx]
+            ib = bnzind[b_idx]
+            s += dot(anzval[a_idx], Q[ia, ib], bnzval[b_idx])
+        end
     end
     return s
 end
