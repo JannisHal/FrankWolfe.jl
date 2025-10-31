@@ -70,13 +70,19 @@ function alternating_linear_minimization(
 
     function build_gradient()
         λ = Ref(λ0)
+        sum_blocks = similar(x0_bc.blocks[1])
 
         return (storage, x) -> begin
             for i in 1:N
                 grad!(gradf.blocks[i], x.blocks[i])
             end
-            t = [N * b - sum(x.blocks) for b in x.blocks]
-            return storage.blocks = λ[] * gradf.blocks + t
+            sum_blocks .= sum(x.blocks)
+            @inbounds for i in 1:N
+                tmp = storage.blocks[i]
+                # tmp = λ * gradf + (N * x - s), all fused and in-place
+                @. tmp = λ[] * gradf.blocks[i] + (N * x.blocks[i] - sum_blocks)
+            end
+            return storage
         end
     end
 
@@ -347,7 +353,7 @@ function alternating_projections(
                 active_sets[i];
                 epsilon=inner_epsilon(t),
                 max_iteration=max_inner_iteration,
-                line_search=Adaptive(),
+                line_search=Shortstep(2.0),
                 kwargs...,
             )
             active_sets[i] = results[:active_set]
@@ -360,8 +366,6 @@ function alternating_projections(
                 epsilon=inner_epsilon(t),
                 max_iteration=max_inner_iteration,
                 line_search=Shortstep(2.0),
-                trajectory=true,
-                verbose=true,
                 kwargs...,
             )
             #@info "$(typeof(lmo.lmos[i])): $(length(results[:traj_data]))"

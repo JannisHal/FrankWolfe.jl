@@ -610,6 +610,10 @@ function block_coordinate_frank_wolfe(
         step_type,
     )
 
+    nthreads = Threads.nthreads()
+    x_workspaces = [similar(x) for _ in 1:nthreads]
+    grad_workspaces = [similar(gradient) for _ in 1:nthreads]
+
     while t <= max_iteration && dual_gap >= max(epsilon, eps(float(typeof(dual_gap))))
 
         #####################
@@ -651,27 +655,30 @@ function block_coordinate_frank_wolfe(
 
             xold = copy(x)
             Threads.@threads for i in update_indices
+                tid = Threads.threadid()
+                xw = x_workspaces[tid]
+                gw = grad_workspaces[tid]
 
-                function extend(y)
-                    bv = copy(xold)
-                    bv.blocks[i] = y
-                    return bv
+                copyto!(xw, x)
+
+                f_i(y) = begin
+                    xw.blocks[i] .= y
+                    return f(xw)
                 end
 
-                function temp_grad!(storage, y, i)
-                    z = extend(y)
-                    big_storage = similar(z)
-                    grad!(big_storage, z)
-                    @. storage = big_storage.blocks[i]
+                grad_i!(storage, y) = begin
+                    xw.blocks[i] .= y
+                    grad!(gw, xw)
+                    @. storage = gw.blocks[i]
                 end
 
                 dual_gaps[i], v.blocks[i], d.blocks[i], gamma, step_type = update_block_iterate(
                     update_step[i],
                     x.blocks[i],
                     lmo.lmos[i],
-                    y -> f(extend(y)),
+                    f_i,
                     gradient.blocks[i],
-                    (storage, y) -> temp_grad!(storage, y, i),
+                    grad_i!,
                     dual_gaps[i],
                     t,
                     line_search[i],
