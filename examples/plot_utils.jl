@@ -244,13 +244,9 @@ end
     z_order := 1
 end
 
-function plot_grid(
+function plot_trajectories(
     data,
-    label,
-    x_indices,
-    y_indices,
-    x_labels,
-    y_labels;
+    label;
     filename=nothing,
     xscalelog=false,
     yscalelog=true,
@@ -265,7 +261,6 @@ function plot_grid(
     extra_plot=false,
     extra_plot_label="",
     plot_title="",
-    offset=2,
 )
     # theme(:dark)
     # theme(:vibrant)
@@ -273,6 +268,7 @@ function plot_grid(
 
     x = []
     y = []
+    offset = 2
 
     function sub_plot(idx_x, idx_y; legend=false, xlabel="", ylabel="", y_offset=0)
 
@@ -335,34 +331,24 @@ function plot_grid(
         return fig
     end
 
-    figs = []
-    for (j, idx_y) in enumerate(y_indices)
-        for (i, idx_x) in enumerate(x_indices)
-            fig = sub_plot(idx_x, idx_y;
-                legend=(i == 1 && j == 1 ? legend_position : nothing),  # Add legend to first plot of the grid
-                xlabel=(j==length(y_indices) ? x_labels[i] : ""),  # Add x_label to last plot of a column
-                ylabel=(i==1 ? y_labels[j] : ""))                  # Add y_label to first plot of a row
-            push!(figs, fig)
-        end
+    pit = sub_plot(1, 2; legend=legend_position, ylabel="Primal", y_offset=primal_offset)
+    pti = sub_plot(5, 2; y_offset=primal_offset)
+    dit = sub_plot(1, 4; xlabel="Iterations", ylabel="FW gap")
+    dti = sub_plot(5, 4; xlabel="Time (s)")
+
+    if extra_plot
+        iit = sub_plot(1, 6; ylabel=extra_plot_label)
+        iti = sub_plot(5, 6)
+        fp = plot(pit, pti, iit, iti, dit, dti, layout=(3, 2), plot_title=plot_title) # layout = @layout([A{0.01h}; [B C; D E]]))
+        plot!(size=(600, 600))
+    else
+        fp = plot(pit, pti, dit, dti, layout=(2, 2), plot_title=plot_title) # layout = @layout([A{0.01h}; [B C; D E]]))
+        plot!(size=(600, 400))
     end
-
-    size = (300 * length(y_indices), 200 * length(x_indices))
-
-    fp = plot(figs..., layout=length(figs))
-    plot!(size=size)
     if filename !== nothing
         savefig(fp, filename)
     end
     return fp
-
-end
-
-function plot_trajectories(
-    data,
-    label;
-    kwargs...
-)
-    plot_grid(data, label, [1, 5], [2, 4], ["Iterations", "Time (s)"], ["Primal", "FW gap"]; kwargs...)
 end
 
 function plot_sparsity(
