@@ -349,6 +349,7 @@ function alternating_projections(
                 max_iteration=max_inner_iteration,
                 line_search=Shortstep(2.0),
                 trajectory=true,
+                verbose=true,
                 kwargs...,
             )
             #@info "$(typeof(lmo.lmos[i])): $(length(results[:traj_data]))"
@@ -382,27 +383,6 @@ function alternating_projections(
 
     while t <= max_iteration && dual_gap >= max(epsilon, eps(float(typeof(dual_gap))))
 
-        # Projection step:
-        for i in 1:N
-            # project the previous iterate on the i-th feasible region
-            x.blocks[i], dual_gaps[i] = projection_step(i, t)
-        end
-
-        dual_gap = sum(dual_gaps)
-        println(dual_gaps)
-
-        # Update gradients
-        grad!(gradient, x)
-        v = compute_extreme_point(lmo, gradient)
-        dual_gap = dot(gradient, x) - dot(gradient, v)
-        println(dual_gap)
-
-
-        # go easy on the memory - only compute if really needed
-        if ((mod(t, print_iter) == 0 && verbose) || callback !== nothing)
-            primal = dist2(x)
-        end
-
         #####################
         # managing time and Ctrl-C
         #####################
@@ -418,6 +398,26 @@ function alternating_projections(
                 break
             end
         end
+
+
+        # Update gradients
+        grad!(gradient, x)
+
+        # go easy on the memory - only compute if really needed
+        if ((mod(t, print_iter) == 0 && verbose) || callback !== nothing)
+            primal = dist2(x)
+            v = compute_extreme_point(lmo, gradient)
+            dual_gap = dot(gradient, x) - dot(gradient, v)
+        end
+
+
+        # Projection step:
+        for i in 1:N
+            # project the previous iterate on the i-th feasible region
+            x.blocks[i], dual_gaps[i] = projection_step(i, t)
+        end
+
+        #dual_gap = sum(dual_gaps)
 
         t = t + 1
         if callback !== nothing
