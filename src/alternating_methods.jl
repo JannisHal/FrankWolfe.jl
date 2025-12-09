@@ -368,7 +368,6 @@ function alternating_projections(
                 line_search=Shortstep(2.0),
                 kwargs...,
             )
-            #@info "$(typeof(lmo.lmos[i])): $(length(results[:traj_data]))"
         end
         return results[:x], results[:dual_gap]
     end
@@ -400,6 +399,9 @@ function alternating_projections(
         # time management
         #####################
         time_at_loop = time_ns()
+        if t == 0
+            time_start = time_at_loop
+        end
         # time is measured at beginning of loop for consistency throughout all algorithms
         tot_time = (time_at_loop - time_start) / 1e9
 
@@ -430,8 +432,6 @@ function alternating_projections(
             # project the previous iterate on the i-th feasible region
             x.blocks[i], dual_gaps[i] = projection_step(i, t)
         end
-
-        #dual_gap = sum(dual_gaps)
 
         t += 1
         if callback !== nothing
