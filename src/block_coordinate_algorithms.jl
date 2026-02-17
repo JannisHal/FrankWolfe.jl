@@ -262,7 +262,41 @@ mutable struct BPCGStep <: UpdateStep
     phi_value::Float64
 end
 
+"""
+Implementation of the lazified Frank-Wolfe algorithm as an update step for block-coordinate Frank-Wolfe.
+Similar to the [`FrankWolfe.lazified_conditional_gradient`](@ref) but adapted for block-coordinate updates.
+Each call to the LMO is cached, and the cache is searched first for a good-enough direction before calling the LMO.
+
+Fields:
+- `lmo`: The cached LMO (VectorCacheLMO), initialized lazily from the block's base LMO
+- `sparsity_control`: Controls the laziness threshold (default 2.0). Higher values make the algorithm lazier.
+- `phi_value`: Current estimate used for lazy threshold computation
+- `greedy_lazy`: If true, use greedy search in cache (default false)
+- `cache_size`: Maximum cache size. If `Inf`, cache grows unbounded.
+"""
+mutable struct LazyFWStep <: UpdateStep
+    lmo::Union{Nothing,FrankWolfe.VectorCacheLMO}
+    sparsity_control::Float64
+    phi_value::Float64
+    greedy_lazy::Bool
+    cache_size::Float64
+end
+
+LazyFWStep() = LazyFWStep(nothing, 2.0, Inf, false, Inf)
+LazyFWStep(sparsity_control::Float64) = LazyFWStep(nothing, sparsity_control, Inf, false, Inf)
+LazyFWStep(sparsity_control::Float64, greedy_lazy::Bool) = LazyFWStep(nothing, sparsity_control, Inf, greedy_lazy, Inf)
+LazyFWStep(sparsity_control::Float64, greedy_lazy::Bool, cache_size::Float64) = LazyFWStep(nothing, sparsity_control, Inf, greedy_lazy, cache_size)
+
 Base.copy(::FrankWolfeStep) = FrankWolfeStep()
+
+function Base.copy(obj::LazyFWStep)
+    lmo = if obj.lmo !== nothing
+        copy(obj.lmo)
+    else
+        nothing
+    end
+    return LazyFWStep(lmo, obj.sparsity_control, obj.phi_value, obj.greedy_lazy, obj.cache_size)
+end
 
 function Base.copy(obj::BPCGStep)
     active_set = if obj.active_set !== nothing
@@ -312,6 +346,78 @@ function update_block_iterate(
     x = muladd_memory_mode(memory_mode, x, gamma, d)
 
     step_type = ST_REGULAR
+
+    return (dual_gap, v, d, gamma, step_type)
+end
+
+"""
+    update_block_iterate for LazyFWStep
+
+Implements the lazified conditional gradient update step for block-coordinate Frank-Wolfe.
+The algorithm caches previously computed vertices and checks the cache before calling the LMO.
+
+The lazy threshold is computed as: `threshold = dot(gradient, x) - phi_value / sparsity_control`
+
+If a cached vertex satisfies the threshold (i.e., `dot(gradient, v) <= threshold`), 
+the cached vertex is used (lazy step). Otherwise, the LMO is called to compute a new vertex,
+and `phi_value` is updated for the next iteration (dual step).
+"""
+function update_block_iterate(
+    s::LazyFWStep,
+    x,
+    lmo,
+    f,
+    gradient,
+    grad!,
+    dual_gap,
+    t,
+    line_search,
+    linesearch_workspace,
+    memory_mode,
+    epsilon,
+    d,
+)
+    # Initialize the cached LMO lazily on first call
+    if s.lmo === nothing
+        VType = typeof(x)
+        s.lmo = VectorCacheLMO{typeof(lmo),VType}(lmo)
+        if isfinite(s.cache_size)
+            Base.sizehint!(s.lmo.vertices, Int(s.cache_size))
+        end
+    end
+
+    # Compute the lazy threshold
+    threshold = dot(gradient, x) - s.phi_value / s.sparsity_control
+
+    # Try to find a good vertex from the cache
+    v = compute_extreme_point(s.lmo, gradient, threshold=threshold, greedy=s.greedy_lazy)
+
+    step_type = ST_LAZY
+
+    # Check if we need a dual step (cached vertex doesn't meet threshold)
+    if dot(gradient, v) > threshold
+        step_type = ST_DUALSTEP
+        dual_gap = dot(gradient, x) - dot(gradient, v)
+        # Update phi_value: take minimum of current dual gap and halved previous phi
+        s.phi_value = min(dual_gap, s.phi_value / 2)
+    end
+
+    d = muladd_memory_mode(memory_mode, d, x, v)
+
+    gamma = perform_line_search(
+        line_search,
+        t,
+        f,
+        grad!,
+        gradient,
+        x,
+        d,
+        1.0,
+        linesearch_workspace,
+        memory_mode,
+    )
+
+    x = muladd_memory_mode(memory_mode, x, gamma, d)
 
     return (dual_gap, v, d, gamma, step_type)
 end
